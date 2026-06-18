@@ -656,6 +656,7 @@ def results_page() -> None:
     prediction = st.session_state.prediction
     severity = prediction["severity"]
     confidence = prediction["confidence"]
+    has_uploaded_scan = st.session_state.last_upload is not None
     _, lang_col = st.columns([0.82, 0.18])
     with lang_col:
         language = st.selectbox("Language", ["English", "Twi"])
@@ -713,7 +714,8 @@ def results_page() -> None:
         )
 
         st.markdown(f"### {text['recommended_action']}")
-        render_result_audio(severity, language, text)
+        if has_uploaded_scan:
+            render_result_audio(severity, language, text)
         st.caption(text["disclaimer"])
         for recommendation in recommendations:
             st.write(f"- {recommendation}")
