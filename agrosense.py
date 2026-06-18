@@ -3,8 +3,8 @@ import tempfile
 import re
 from dataclasses import dataclass
 from datetime import date
-from io import BytesIO
 from pathlib import Path
+from html import escape as html_escape
 
 import pandas as pd
 import streamlit as st
@@ -29,6 +29,20 @@ from app_data import (
 )
 from model_service import predict_leaf_image, predict_video
 from storage_service import clear_scan_history, format_scan_time, get_scan, get_scans, init_db, save_scan
+
+
+AUDIO_SCRIPTS = {
+    "English": {
+        "Healthy": Path("voicescript/healthyeng.m4a"),
+        "Early to Moderate": Path("voicescript/earlymoderateeng.m4a"),
+        "Severe": Path("voicescript/severeeng.m4a"),
+    },
+    "Twi": {
+        "Healthy": Path("voicescript/healthyscript.m4a"),
+        "Early to Moderate": Path("voicescript/earlytomoderate.m4a"),
+        "Severe": Path("voicescript/severe.m4a"),
+    },
+}
 
 
 st.set_page_config(
@@ -61,27 +75,123 @@ def goto(page: str) -> None:
     st.rerun()
 
 
+def result_text(language: str) -> dict:
+    return {
+        **RESULT_TEXT["English"],
+        **RESULT_TEXT.get(language, {}),
+    }
+
+
 def choose_profile(profile: str) -> None:
     st.session_state.profile = profile
     st.session_state.page = "Home"
     st.rerun()
 
 
-def build_excel_report(severity: str, confidence: int, recommendations: list[str]) -> bytes:
-    output = BytesIO()
-    summary = pd.DataFrame(
-        [
-            {"Field": "Severity", "Value": severity},
-            {"Field": "Confidence", "Value": f"{confidence}%"},
-        ]
+def build_word_report(
+    severity: str,
+    confidence: int,
+    recommendations: list[str],
+    text: dict,
+    prediction: dict,
+) -> bytes:
+    report_date = date.today().strftime("%Y-%m-%d")
+    class_counts = prediction.get("class_counts", {})
+    detections = prediction.get("detections", [])
+
+    summary_items = [
+        (text["severity"], localized_severity(severity, text)),
+        (text["confidence"], f"{confidence}%"),
+    ]
+    if prediction.get("frames_processed"):
+        summary_items.append(
+            (
+                text["ai_detections"],
+                text["frames_analyzed"].format(count=prediction["frames_processed"]),
+            )
+        )
+
+    summary_rows = "".join(
+        "<tr>"
+        f"<th>{html_escape(label)}</th>"
+        f"<td>{html_escape(value)}</td>"
+        "</tr>"
+        for label, value in summary_items
     )
-    actions = pd.DataFrame({"Recommended Action": recommendations})
+    recommendation_items = "".join(
+        f"<li>{html_escape(recommendation)}</li>"
+        for recommendation in recommendations
+    )
+    class_count_items = "".join(
+        f"<li>{html_escape(localized_severity(label, text))}: {count}</li>"
+        for label, count in class_counts.items()
+    )
+    detection_rows = ""
+    for index, detection in enumerate(detections[:100], start=1):
+        if prediction.get("source") == "video_model":
+            first_column = format_video_timestamp(detection["timestamp_seconds"])
+            first_header = text["video_timestamp"]
+        else:
+            first_column = str(index)
+            first_header = "#"
+        detection_rows += (
+            "<tr>"
+            f"<td>{html_escape(first_column)}</td>"
+            f"<td>{html_escape(localized_severity(detection['severity'], text))}</td>"
+            f"<td>{detection['confidence']:.1f}%</td>"
+            "</tr>"
+        )
+    details_table = ""
+    if detection_rows:
+        details_table = (
+            f"<h2>{html_escape(text['view_detection_details'])}</h2>"
+            "<table>"
+            "<thead><tr>"
+            f"<th>{html_escape(first_header)}</th>"
+            f"<th>{html_escape(text['severity'])}</th>"
+            f"<th>{html_escape(text['confidence'])}</th>"
+            "</tr></thead>"
+            f"<tbody>{detection_rows}</tbody>"
+            "</table>"
+        )
+        if len(detections) > 100:
+            details_table += (
+                "<p><em>"
+                f"{html_escape(text['showing_first_detections'].format(count=len(detections)))}"
+                "</em></p>"
+            )
 
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        summary.to_excel(writer, sheet_name="Summary", index=False)
-        actions.to_excel(writer, sheet_name="Recommendations", index=False)
-
-    return output.getvalue()
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>MaizeSecure AI Detection Report</title>
+  <style>
+    body {{ font-family: Arial, sans-serif; color: #173225; line-height: 1.45; }}
+    h1 {{ color: #1f7a3f; }}
+    h2 {{ color: #25663d; margin-top: 24px; }}
+    table {{ border-collapse: collapse; width: 100%; margin: 12px 0; }}
+    th, td {{ border: 1px solid #c9d7cf; padding: 8px; text-align: left; }}
+    th {{ background: #eef7f0; }}
+    .disclaimer {{ color: #5f6f66; font-size: 0.9rem; }}
+  </style>
+</head>
+<body>
+  <h1>MaizeSecure AI Detection Report</h1>
+  <p><strong>Generated:</strong> {html_escape(report_date)}</p>
+  <h2>{html_escape(text["metadata"])}</h2>
+  <table>{summary_rows}</table>
+  <p>{html_escape(confidence_statement(severity, confidence, text))}</p>
+  <h2>{html_escape(text["recommended_action"])}</h2>
+  <ul>{recommendation_items}</ul>
+  <h2>{html_escape(text["detection_summary"])}</h2>
+  <ul>{class_count_items or "<li>No detection summary available.</li>"}</ul>
+  {details_table}
+  <h2>Disclaimer</h2>
+  <p class="disclaimer">{html_escape(text["disclaimer"])}</p>
+</body>
+</html>"""
+    return html.encode("utf-8")
 
 
 def recommendation_disclaimer() -> None:
@@ -107,39 +217,65 @@ def format_video_timestamp(seconds: float) -> str:
     return f"{minutes:02d}:{remaining_seconds:05.2f}"
 
 
-def video_detection_rows(detections: list[dict]) -> list[dict]:
+def localized_severity(severity: str, text: dict) -> str:
+    labels = {
+        "Healthy": text.get("healthy", "Healthy"),
+        "Early to Moderate": text.get("early_to_moderate", "Early to Moderate"),
+        "Severe": text.get("severe", "Severe"),
+    }
+    return labels.get(severity, severity)
+
+
+def localized_severity_badge(severity: str, text: dict) -> str:
+    color = SEVERITY_COLORS[severity]
+    return (
+        "<span class='severity-badge' "
+        f"style='color:{color};font-size:1.05rem;padding:8px 16px'>"
+        f"● {localized_severity(severity, text)}</span>"
+    )
+
+
+def video_detection_rows(detections: list[dict], text: dict) -> list[dict]:
     return [
         {
-            "Video Timestamp": format_video_timestamp(
+            text["video_timestamp"]: format_video_timestamp(
                 detection["timestamp_seconds"]
             ),
-            "Severity": detection["severity"],
-            "Confidence": f"{detection['confidence']:.1f}%",
+            text["severity"]: localized_severity(detection["severity"], text),
+            text["confidence"]: f"{detection['confidence']:.1f}%",
         }
         for detection in detections[:100]
     ]
 
 
-def confidence_statement(severity: str, confidence: int) -> str:
+def confidence_statement(severity: str, confidence: int, text: dict) -> str:
     if severity == "Healthy":
-        return (
-            f"The model is {confidence}% confident that there is no "
-            "Fall Armyworm infestation."
-        )
+        return text["healthy_confidence"].format(confidence=confidence)
     if severity == "Early to Moderate":
-        return (
-            f"The model is {confidence}% confident that the infestation "
-            "is at the early to moderate stage."
-        )
-    return (
-        f"The model is {confidence}% confident that the infestation "
-        "is at the severe stage."
-    )
+        return text["early_confidence"].format(confidence=confidence)
+    return text["severe_confidence"].format(confidence=confidence)
 
 
 def valid_ghana_phone(value: str) -> bool:
     normalized = re.sub(r"[\s-]", "", value)
     return bool(re.fullmatch(r"(?:0\d{9}|\+233\d{9})", normalized))
+
+
+def render_result_audio(severity: str, language: str, text: dict) -> None:
+    audio_path = AUDIO_SCRIPTS.get(language, {}).get(severity)
+    if audio_path is None:
+        return
+    if not audio_path.exists():
+        st.warning(f"{language} audio file not found: {audio_path}")
+        return
+
+    st.caption(text["audio_caption"])
+    st.audio(
+        audio_path.read_bytes(),
+        format="audio/mp4",
+        autoplay=True,
+        width="stretch",
+    )
 
 
 @dataclass
@@ -218,39 +354,40 @@ def profile_page() -> None:
         st.session_state.login_role = "Farmer"
 
     st.markdown('<div class="login-page-marker"></div>', unsafe_allow_html=True)
-    brand_col, form_col = st.columns(
-        [0.62, 1.38],
+    form_col, brand_col = st.columns(
+        [1.38, 0.62],
         gap=None,
         vertical_alignment="center",
     )
 
     with brand_col:
-        st.markdown(
-            """
-            <div class="login-brand-panel">
-              <div class="login-logo">
-                <span class="login-logo-icon">🌿</span>
-                <span>MaizeSecure</span>
-              </div>
-              <div class="login-brand-content">
-                <div class="login-eyebrow">AI-Powered Agriculture</div>
-                <h1>Protecting Ghana's<br>Maize Farms with AI</h1>
-                <p>
-                  Detect Fall Armyworm infestations early, monitor outbreaks in
-                  real time, and get expert guidance - all in one platform.
-                </p>
-                <div class="login-feature">✓ <span>Instant AI pest detection from leaf photos</span></div>
-                <div class="login-feature">✓ <span>Real-time outbreak maps for your region</span></div>
-                <div class="login-feature">✓ <span>Tailored treatment recommendations</span></div>
-              </div>
-              <div class="login-testimonial">
-                <em>"MaizeSecure helped me identify FAW early and save my entire harvest."</em>
-                <span>- <strong>Kofi A.</strong>, Farmer · Brong-Ahafo Region</span>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        with st.container(key="login_brand_card"):
+            st.markdown(
+                """
+                <div class="login-brand-panel">
+                  <div class="login-logo">
+                    <span class="login-logo-icon">🌿</span>
+                    <span>MaizeSecure</span>
+                  </div>
+                  <div class="login-brand-content">
+                    <div class="login-eyebrow">AI-Powered Agriculture</div>
+                    <h1>Protecting Ghana's<br>Maize Farms with AI</h1>
+                    <p>
+                      Detect Fall Armyworm infestations early, monitor outbreaks in
+                      real time, and get expert guidance - all in one platform.
+                    </p>
+                    <div class="login-feature">✓ <span>Instant AI pest detection from leaf photos</span></div>
+                    <div class="login-feature">✓ <span>Real-time outbreak maps for your region</span></div>
+                    <div class="login-feature">✓ <span>Tailored treatment recommendations</span></div>
+                  </div>
+                  <div class="login-testimonial">
+                    <em>"MaizeSecure helped me identify FAW early and save my entire harvest."</em>
+                    <span>- <strong>Kofi A.</strong>, Farmer · Brong-Ahafo Region</span>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
     with form_col:
         with st.container(key="login_form_card"):
@@ -354,23 +491,16 @@ def profile_page() -> None:
 def extension_officer_page() -> None:
     with st.sidebar:
         st.markdown("## 🌱 MaizeSecure")
+        st.caption("Regional Fall Armyworm monitoring")
         st.markdown("**Profile:** Extension Officer")
         if st.button("Logout", width="stretch"):
             st.session_state.profile = None
             st.rerun()
+        st.divider()
+        st.markdown("**Navigation**")
+        st.write("📊 Dashboard")
 
-    st.markdown(
-        """
-        <div class="hero">
-          <div class="tag">Extension Officer</div>
-          <h1>Officer Workspace Coming Later</h1>
-          <p>This profile is reserved for future regional monitoring, farmer case review, and outbreak response workflows.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    if st.button("Switch to Farmer Profile", type="primary"):
-        choose_profile("Farmer")
+    dashboard_page()
 
 
 def home_page() -> None:
@@ -529,17 +659,20 @@ def results_page() -> None:
     _, lang_col = st.columns([0.82, 0.18])
     with lang_col:
         language = st.selectbox("Language", ["English", "Twi"])
-    text = RESULT_TEXT[language]
+    text = result_text(language)
     st.title(text["title"])
     st.caption(text["caption"])
 
     if prediction.get("source") in {"error", "no_detection"}:
         if prediction.get("source") == "no_detection":
-            st.warning("The model could not detect a maize leaf condition in this image.")
-            st.info("Try a clearer maize leaf photo with the leaf filling most of the frame.")
+            st.warning(text["no_detection_warning"])
+            st.info(text["no_detection_tip"])
         else:
-            st.error("The real maize model could not run in this environment.")
-            st.caption(f"Model error: {prediction.get('error', 'Unknown model error')}")
+            st.error(text["model_error"])
+            st.caption(
+                f"{text['model_error_caption']}: "
+                f"{prediction.get('error', text['unknown_model_error'])}"
+            )
         if st.button(text["scan_another"], type="primary"):
             goto("Scan Crop")
         return
@@ -558,7 +691,7 @@ def results_page() -> None:
         if prediction.get("annotated_image"):
             st.image(
                 prediction["annotated_image"],
-                caption="AI detections",
+                caption=text["ai_detections"],
                 width="stretch",
             )
         elif st.session_state.last_upload is not None:
@@ -568,18 +701,20 @@ def results_page() -> None:
 
     with right:
         st.markdown(
-            f"<div class='result-prediction'><h3>{text['prediction']}: {severity_badge(severity)}</h3></div>",
+            f"<div class='result-prediction'><h3>{text['prediction']}: {localized_severity_badge(severity, text)}</h3></div>",
             unsafe_allow_html=True,
         )
-        st.info(confidence_statement(severity, confidence))
+        st.info(confidence_statement(severity, confidence, text))
         if prediction.get("frames_processed"):
             st.caption(
-                f"Analyzed {prediction['frames_processed']} sampled video frames. "
-                "Counts describe frame-level detections, not unique plants."
-            )
+                text["frames_analyzed"].format(
+                    count=prediction["frames_processed"]
+                )
+        )
 
         st.markdown(f"### {text['recommended_action']}")
-        recommendation_disclaimer()
+        render_result_audio(severity, language, text)
+        st.caption(text["disclaimer"])
         for recommendation in recommendations:
             st.write(f"- {recommendation}")
 
@@ -588,40 +723,47 @@ def results_page() -> None:
             goto("Scan Crop")
         c2.download_button(
             text["download"],
-            data=build_excel_report(severity, confidence, recommendations),
-            file_name="MaizeSecure_report.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            data=build_word_report(severity, confidence, recommendations, text, prediction),
+            file_name="MaizeSecure_report.doc",
+            mime="application/msword",
             width="stretch",
         )
 
     class_counts = prediction.get("class_counts", {})
     if class_counts:
-        st.markdown("### Detection Summary")
+        st.markdown(f"### {text['detection_summary']}")
         summary_columns = st.columns(3)
         for column, label in zip(
             summary_columns,
             ["Healthy", "Early to Moderate", "Severe"],
         ):
-            column.metric(label, class_counts.get(label, 0))
+            column.metric(localized_severity(label, text), class_counts.get(label, 0))
 
     detections = prediction.get("detections", [])
     if detections:
         if prediction.get("source") == "video_model":
-            detail_rows = video_detection_rows(detections)
+            detail_rows = video_detection_rows(detections, text)
         else:
             detail_rows = [
                 {
                     "#": index,
-                    "Severity": detection["severity"],
-                    "Confidence": f"{detection['confidence']:.1f}%",
+                    text["severity"]: localized_severity(
+                        detection["severity"],
+                        text,
+                    ),
+                    text["confidence"]: f"{detection['confidence']:.1f}%",
                 }
                 for index, detection in enumerate(detections[:100], start=1)
             ]
 
-        with st.expander("View detection details"):
+        with st.expander(text["view_detection_details"]):
             st.dataframe(pd.DataFrame(detail_rows), width="stretch", hide_index=True)
             if len(detections) > 100:
-                st.caption(f"Showing the first 100 of {len(detections)} detections.")
+                st.caption(
+                    text["showing_first_detections"].format(
+                        count=len(detections)
+                    )
+                )
 
 
 def dashboard_page() -> None:
@@ -737,7 +879,12 @@ def history_page() -> None:
                 if selected_scan["source"] == "video_model" and detections:
                     with st.expander("View detection details"):
                         st.dataframe(
-                            pd.DataFrame(video_detection_rows(detections)),
+                            pd.DataFrame(
+                                video_detection_rows(
+                                    detections,
+                                    RESULT_TEXT["English"],
+                                )
+                            ),
                             width="stretch",
                             hide_index=True,
                         )

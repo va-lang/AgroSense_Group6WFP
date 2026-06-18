@@ -306,7 +306,7 @@ def apply_theme() -> None:
           color: rgba(255,255,255,.55) !important;
         }
 
-        .login-page-marker + div > div:last-child {
+        .login-page-marker + div > div:first-child {
           box-sizing: border-box;
           height: 100dvh;
           padding: 48px 36px !important;
@@ -428,19 +428,85 @@ def apply_theme() -> None:
           color: var(--green-600) !important;
         }
 
-        @media (max-width: 860px) {
+        @media screen and (max-width: 1100px),
+               screen and (max-device-width: 1100px),
+               screen and (orientation: portrait) {
+          .stMainBlockContainer:has(.login-page-marker) {
+            width: 100vw;
+            max-width: 100vw;
+            padding: 0 !important;
+          }
+
+          .login-page-marker + div {
+            width: 100%;
+            max-width: none;
+            height: 100dvh;
+            margin: 0;
+            overflow: hidden;
+          }
+
+          .stApp:has(.login-page-marker) div[data-testid="stColumn"]:has(.login-brand-panel),
+          .stApp:has(.login-page-marker) div[data-testid="stColumn"]:has(.st-key-login_brand_card),
+          .stApp:has(.login-page-marker) [data-testid="column"]:has(.login-brand-panel),
+          .stApp:has(.login-page-marker) [data-testid="column"]:has(.st-key-login_brand_card),
+          .login-page-marker + div [data-testid="stHorizontalBlock"] > div:nth-child(2),
+          .login-page-marker + div > div:nth-child(2),
+          .login-page-marker + div > div > div:nth-child(2) {
+            display: none !important;
+            width: 0 !important;
+            flex: 0 0 0 !important;
+            min-width: 0 !important;
+            max-width: 0 !important;
+            height: 0 !important;
+            min-height: 0 !important;
+            max-height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            overflow: hidden !important;
+          }
+
+          .st-key-login_brand_card,
           .login-brand-panel {
-            min-height: 430px;
-            padding: 30px;
+            display: none !important;
+            visibility: hidden !important;
+            width: 0 !important;
+            height: 0 !important;
+            min-height: 0 !important;
+            max-height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            overflow: hidden !important;
+            background: transparent !important;
           }
 
-          .login-brand-content {
-            padding: 45px 0 30px;
+          .login-page-marker + div > div:first-child,
+          .stApp:has(.login-page-marker) div[data-testid="stColumn"]:has(.st-key-login_form_card),
+          .stApp:has(.login-page-marker) [data-testid="column"]:has(.st-key-login_form_card) {
+            width: 100% !important;
+            max-width: 100% !important;
+            flex: 1 1 100% !important;
+            height: 100dvh;
+            min-height: 100dvh;
+            padding: 24px 20px !important;
+            justify-content: center;
+            align-items: center;
           }
 
-          .login-page-marker + div > div:last-child {
-            min-height: auto;
-            padding: 42px 28px !important;
+          .st-key-login_form_card {
+            width: min(100%, 420px);
+          }
+
+          .login-form-heading h1 {
+            font-size: 1.65rem;
+          }
+
+          .login-form-heading p {
+            margin-bottom: 18px;
+          }
+
+          .st-key-login_role_farmer button,
+          .st-key-login_role_officer button {
+            min-height: 78px;
           }
         }
 

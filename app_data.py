@@ -71,6 +71,30 @@ RESULT_TEXT = {
         "recommended_action": "Recommended Action",
         "scan_another": "Scan Another Image",
         "download": "Download Report",
+        "no_detection_warning": "The model could not detect a maize leaf condition in this image.",
+        "no_detection_tip": "Try a clearer maize leaf photo with the leaf filling most of the frame.",
+        "model_error": "The real maize model could not run in this environment.",
+        "model_error_caption": "Model error",
+        "unknown_model_error": "Unknown model error",
+        "ai_detections": "AI detections",
+        "frames_analyzed": "Analyzed {count} sampled video frames. Counts describe frame-level detections, not unique plants.",
+        "audio_caption": "Voice guidance",
+        "disclaimer": (
+            "Disclaimer: These recommendations are deliberately conservative, high-level action guides. "
+            "They do not constitute a full agronomic prescription, and explicitly acknowledge the "
+            "irreplaceable value of expert extension guidance for field-level management decisions."
+        ),
+        "detection_summary": "Detection Summary",
+        "view_detection_details": "View detection details",
+        "showing_first_detections": "Showing the first 100 of {count} detections.",
+        "video_timestamp": "Video Timestamp",
+        "severity": "Severity",
+        "healthy": "Healthy",
+        "early_to_moderate": "Early to Moderate",
+        "severe": "Severe",
+        "healthy_confidence": "The model is {confidence}% confident that there is no Fall Armyworm infestation.",
+        "early_confidence": "The model is {confidence}% confident that the infestation is at the early to moderate stage.",
+        "severe_confidence": "The model is {confidence}% confident that the infestation is at the severe stage.",
     },
     "Twi": {
         "title": "AI Nhwehwɛmu Aba",
@@ -87,6 +111,30 @@ RESULT_TEXT = {
         "recommended_action": "Nea ɛsɛ sɛ woyɛ",
         "scan_another": "Scan Mfonini Foforɔ",
         "download": "Twe Report",
+        "no_detection_warning": "Model no anhu ahaban no tebea biara wɔ mfonini yi mu.",
+        "no_detection_tip": "Fa aburoo ahaban mfonini a emu da hɔ na ahaban no ayɛ kɛse wɔ frame no mu san sɔ hwɛ.",
+        "model_error": "Aburoo AI model no antumi anyɛ adwuma wɔ ha.",
+        "model_error_caption": "Model mfomsoɔ",
+        "unknown_model_error": "Model mfomsoɔ a yennim",
+        "ai_detections": "AI ade a ɛhunui",
+        "frames_analyzed": "Yɛhwɛɛ video frame {count} a wɔpaw. Akontaabu no kyerɛ frame mu detections, ɛnyɛ nnua soronko.",
+        "audio_caption": "Twi nne akwankyerɛ",
+        "disclaimer": (
+            "Hyɛ no nso: Akwankyerɛ yi yɛ akwankyerɛ tiawa a ɛboa wo ma wuhu nea wobɛyɛ. "
+            "Ɛnyɛ agronomist adwuma nyinaa ananmu, enti sɛ tebea no mu yɛ den a, "
+            "frɛ extension officer ma ɔmmɛhwɛ afuo no."
+        ),
+        "detection_summary": "Ade a AI hunui no mua",
+        "view_detection_details": "Hwɛ detections no ho nsɛm",
+        "showing_first_detections": "Yɛrekyerɛ detections {count} no mu 100 a edi kan.",
+        "video_timestamp": "Video bere",
+        "severity": "Tebea",
+        "healthy": "Ahaban no ho yɛ",
+        "early_to_moderate": "Mfitiaseɛ kosi mfinimfini",
+        "severe": "Emu yɛ den",
+        "healthy_confidence": "Model no wɔ ahotosoɔ {confidence}% sɛ Fall Armyworm biara nni hɔ.",
+        "early_confidence": "Model no wɔ ahotosoɔ {confidence}% sɛ yare no wɔ mfitiaseɛ kosi mfinimfini tebea mu.",
+        "severe_confidence": "Model no wɔ ahotosoɔ {confidence}% sɛ yare no mu yɛ den.",
     },
 }
 
